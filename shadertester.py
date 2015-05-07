@@ -11,8 +11,6 @@ import numpy as np
 sys.path.insert(0, './dependencies/')
 from shadertester2 import *
 
-# default window size
-width, height = 600, 600
 
 ##################################################
 ##SETTINGS
@@ -20,6 +18,8 @@ width, height = 600, 600
 vertexshaderpath='./using/vertexshader.glsl'
 fragmentshaderpath='./using/fragmentshader.glsl'
 inputimagepath='./using/image.png'
+#window width
+DEFAULT_WIDTH = 1600
 
 #the plot widget
 class GLWidget(QGLWidget):
@@ -32,30 +32,62 @@ class GLWidget(QGLWidget):
 		# compile the vertex shader
 		vs = compile_vertex_shader(vertexshader)
 		# compile the fragment shader
-		fs = compile_fragment_shader(fragmentshader)
+		ifs = compile_fragment_shader(inputfragmentshader)
+		ofs = compile_fragment_shader(outputfragmentshader)
 		# compile the vertex shader
-		self.shaders_program = link_shader_program(vs, fs)
+		self.ishaders_program = link_shader_program(vs, ifs)
+		self.oshaders_program = link_shader_program(vs, ofs)
+		#make textures
+		self.inputTex = gl.glGenTextures(1)
+		gl.glBindTexture(gl.GL_TEXTURE_2D, self.inputTex)
+		gl.glTexImage2D(gl.GL_TEXTURE_2D, 0, gl.GL_RGBA, input_image.width(), input_image.height(), 0, gl.GL_RGBA, gl.GL_UNSIGNED_BYTE, img_data)
+		gl.glTexParameterf(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MIN_FILTER, gl.GL_NEAREST)
+		gl.glTexParameterf(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MAG_FILTER, gl.GL_NEAREST)
+		gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
 
 	def paintGL(self):
 		"""Paint the scene."""
 		# clear the buffer
 		gl.glClear(gl.GL_COLOR_BUFFER_BIT)
 		#use the program
-		gl.glUseProgram(self.shaders_program)
+		gl.glUseProgram(self.ishaders_program)
 		#set uniforms
-		gl.glUniform2f(gl.glGetUniformLocation(self.shaders_program, "offset"), 0, 0)
-		gl.glUniform2f(gl.glGetUniformLocation(self.shaders_program, "scale"), 1, 1)
+		gl.glUniform2f(gl.glGetUniformLocation(self.ishaders_program, "offset"), -1, 0)
+		gl.glUniform2f(gl.glGetUniformLocation(self.ishaders_program, "scale"), 2, 1)
+		gl.glUniform1i(gl.glGetUniformLocation(self.ishaders_program, "tex"), 0)
 		# bind the VBO 
 		self.vbo.bind()
+		# bind the texture
+		gl.glBindTexture(gl.GL_TEXTURE_2D, self.inputTex)
 		#bind texture here!
-		loc = gl.glGetAttribLocation(self.shaders_program, "vertex");
+		loc = gl.glGetAttribLocation(self.ishaders_program, "vertex");
 		# these vertices contain 4 single precision coordinates
-		gl.glVertexAttribPointer(loc, 4, gl.GL_FLOAT, gl.GL_FALSE, 0, None)
+		gl.glVertexAttribPointer(loc, 4, gl.GL_FLOAT, gl.GL_FALSE, 16, None)
 		# tell OpenGL that the VBO contains an array of vertices
 		# prepare the shader        
 		gl.glEnableVertexAttribArray(loc)        
 		# draw "count" points from the VBO
-		gl.glDrawArrays(gl.GL_QUADS, 0, 4)
+		gl.glDrawArrays(gl.GL_TRIANGLE_STRIP, 0, 4)
+		
+		#use the program
+		gl.glUseProgram(self.oshaders_program)
+		#set uniforms
+		gl.glUniform2f(gl.glGetUniformLocation(self.oshaders_program, "offset"), -1, -1)
+		gl.glUniform2f(gl.glGetUniformLocation(self.oshaders_program, "scale"), 2, 1)
+		gl.glUniform1i(gl.glGetUniformLocation(self.oshaders_program, "tex"), 0)
+		# bind the VBO 
+		self.vbo.bind()
+		# bind the texture
+		gl.glBindTexture(gl.GL_TEXTURE_2D, self.inputTex)
+		#bind texture here!
+		loc = gl.glGetAttribLocation(self.ishaders_program, "vertex");
+		# these vertices contain 4 single precision coordinates
+		gl.glVertexAttribPointer(loc, 4, gl.GL_FLOAT, gl.GL_FALSE, 16, None)
+		# tell OpenGL that the VBO contains an array of vertices
+		# prepare the shader        
+		gl.glEnableVertexAttribArray(loc)        
+		# draw "count" points from the VBO
+		gl.glDrawArrays(gl.GL_TRIANGLE_STRIP, 0, 4)
 
 	def resizeGL(self, width, height):
 		"""Called upon window resizing: reinitialize the viewport."""
@@ -71,7 +103,7 @@ class TestWindow(QtGui.QMainWindow):
 		self.widget = GLWidget()
 		self.widget.data = data
 		# put the window at the screen position (100, 100)
-		self.setGeometry(100, 100, width, height)
+		self.setGeometry(50, 50, width, height)
 		self.setCentralWidget(self.widget)
 		self.show()
 
@@ -80,25 +112,39 @@ f = open(vertexshaderpath, "r")
 vertexshader = f.read()
 f.close()
 f = open(fragmentshaderpath, "r")
-fragmentshader = f.read()
+outputfragmentshader = f.read()
+f.close()
+f = open('./using/inputcopy.glsl', "r")
+inputfragmentshader = f.read()
 f.close()
 
 #fill the vertex buffer
 data = np.array([
--1,0,1,1,
+0,0,1,1,
 1,0,1,1,
-1,1,1,1,
--1,1,1,1
+0,1,1,1,
+1,1,1,1
 ], dtype=np.float32)
 
 #load the input image
 input_image = QtGui.QImage(inputimagepath)
 input_image = input_image.convertToFormat(QtGui.QImage.Format_ARGB32)
-width = int(input_image.width())
-height = int(2*input_image.height())
-ptr = input_image.bits()
-ptr.setsize(input_image.byteCount())
-img_data = np.asarray(ptr)
+width = DEFAULT_WIDTH
+height = width/input_image.width()*2*input_image.height()
+img_data = np.empty(input_image.width()*input_image.height()*4, dtype=np.ubyte)
+for i in range (0,input_image.height()):
+	for j in range (0,input_image.width()):
+		pixel = input_image.pixel(j,i)
+		img_data[((input_image.height()-i-1)*input_image.width()+j)*4+0] = QtGui.qRed(pixel)
+		img_data[((input_image.height()-i-1)*input_image.width()+j)*4+1] = QtGui.qGreen(pixel)
+		img_data[((input_image.height()-i-1)*input_image.width()+j)*4+2] = QtGui.qBlue(pixel)
+		img_data[((input_image.height()-i-1)*input_image.width()+j)*4+3] = 255
+#ptr = input_image.bits()
+#ptr.setsize(input_image.byteCount())
+#img_data = np.copy(np.asarray(ptr))
+#img_data.resize(len(img_data)+1)
+#img_data[len(img_data)-1]=256 #move to make RGBA for OpenGL
+#img_data = img_data[1:]
 
 # show the window
 win = create_window(TestWindow)

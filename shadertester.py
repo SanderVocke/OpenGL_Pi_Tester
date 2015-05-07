@@ -11,17 +11,18 @@ import numpy as np
 sys.path.insert(0, './dependencies/')
 from shadertester2 import *
 
+# default window size
+width, height = 600, 600
+
 ##################################################
 ##SETTINGS
 ##################################################
-vertexshaderpath='./shaders/test/vertices.glsl'
-fragmentshaderpath='./shaders/test/red.glsl'
+vertexshaderpath='./using/vertexshader.glsl'
+fragmentshaderpath='./using/fragmentshader.glsl'
+inputimagepath='./using/image.png'
 
 #the plot widget
 class GLWidget(QGLWidget):
-	# default window size
-	width, height = 600, 600
-
 	def initializeGL(self):
 		"""Initialize OpenGL, VBOs, upload data on the GPU, etc."""
 		# background color
@@ -59,7 +60,6 @@ class GLWidget(QGLWidget):
 	def resizeGL(self, width, height):
 		"""Called upon window resizing: reinitialize the viewport."""
 		# update the window size
-		self.width, self.height = width, height
 		# paint within the whole window
 		gl.glViewport(0, 0, width, height)
 
@@ -71,7 +71,7 @@ class TestWindow(QtGui.QMainWindow):
 		self.widget = GLWidget()
 		self.widget.data = data
 		# put the window at the screen position (100, 100)
-		self.setGeometry(100, 100, self.widget.width, self.widget.height)
+		self.setGeometry(100, 100, width, height)
 		self.setCentralWidget(self.widget)
 		self.show()
 
@@ -84,16 +84,21 @@ fragmentshader = f.read()
 f.close()
 
 #fill the vertex buffer
-#data = np.zeros((10000, 2), dtype=np.float32)
-#data[:,0] = np.linspace(-1., 1., len(data
-
-#fill the vertex buffer
 data = np.array([
--0.5,-0.5,1,1,
-0.5,-0.5,1,1,
-0.5,0.5,1,1,
--0.5,0.5,1,1
+-1,0,1,1,
+1,0,1,1,
+1,1,1,1,
+-1,1,1,1
 ], dtype=np.float32)
+
+#load the input image
+input_image = QtGui.QImage(inputimagepath)
+input_image = input_image.convertToFormat(QtGui.QImage.Format_ARGB32)
+width = int(input_image.width())
+height = int(2*input_image.height())
+ptr = input_image.bits()
+ptr.setsize(input_image.byteCount())
+img_data = np.asarray(ptr)
 
 # show the window
 win = create_window(TestWindow)

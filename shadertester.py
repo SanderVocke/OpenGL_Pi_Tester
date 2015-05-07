@@ -11,12 +11,11 @@ import OpenGL.arrays.vbo as glvbo
 import numpy as np
 sys.path.insert(0, './dependencies/')
 from shadertester2 import *
-
+vertexshaderpath='./resources/vertexshader.glsl'
 
 ##################################################
 ##SETTINGS
 ##################################################
-vertexshaderpath='./using/vertexshader.glsl'
 fragmentshaderpath='./using/fragmentshader.glsl'
 inputimagepath='./using/image.png'
 #window width

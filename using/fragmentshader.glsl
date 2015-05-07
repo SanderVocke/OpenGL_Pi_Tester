@@ -22,7 +22,7 @@ vec3 hsv2rgb(vec3 c)
 vec3 doThreshold(vec3 c)
 {
     vec3 hsv = rgb2hsv(c);
-    if((hsv[0] >= 0.55) && (hsv[0] <= 0.75) && (hsv[1] > 0.3) && (hsv[2] > 0.2)) return vec3(1, 1, 1);
+    if((hsv[0] >= 0.55) && (hsv[0] <= 0.75) && (hsv[1] > 0.3) && (hsv[2] > 0.2)) return vec3(hsv[0], 1, 1);
     return c*vec3(0.3,0.3,0.3);
 }
 
@@ -35,7 +35,7 @@ vec3 colorize(vec3 c)
 vec3 colorizeSelect(vec3 c)
 {
     vec3 hsv = rgb2hsv(c);
-    if((hsv[1] > 0.3) && (hsv[2] > 0.3)) return hsv2rgb(vec3(hsv[0], 1, 1));
+    if((hsv[1] > 0.15) && (hsv[2] > 0.3)) return hsv2rgb(vec3(hsv[0], 1, 1));
     return vec3(0,0,0);
 }
 

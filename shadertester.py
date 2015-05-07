@@ -1,4 +1,5 @@
 import sys
+import os.path, time
 # PyQt4 imports
 from PyQt4 import QtGui, QtCore, QtOpenGL
 from PyQt4.QtOpenGL import QGLWidget
@@ -25,6 +26,7 @@ DEFAULT_WIDTH = 1600
 class GLWidget(QGLWidget):
 	def initializeGL(self):
 		"""Initialize OpenGL, VBOs, upload data on the GPU, etc."""
+		self.ofs_error=False
 		# background color
 		gl.glClearColor(0, 0, 0, 0)
 		# create a Vertex Buffer Object with the specified data
@@ -33,7 +35,12 @@ class GLWidget(QGLWidget):
 		vs = compile_vertex_shader(vertexshader)
 		# compile the fragment shader
 		ifs = compile_fragment_shader(inputfragmentshader)
-		ofs = compile_fragment_shader(outputfragmentshader)
+		try:
+			ofs = compile_fragment_shader(outputfragmentshader)
+		except RuntimeError as e:
+			print("Compilation error on fragment shader:\n\t{0}".format(e))
+			ofs = compile_fragment_shader(inputfragmentshader)
+			self.ofs_error = True
 		# compile the vertex shader
 		self.ishaders_program = link_shader_program(vs, ifs)
 		self.oshaders_program = link_shader_program(vs, ofs)
@@ -44,6 +51,60 @@ class GLWidget(QGLWidget):
 		gl.glTexParameterf(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MIN_FILTER, gl.GL_NEAREST)
 		gl.glTexParameterf(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MAG_FILTER, gl.GL_NEAREST)
 		gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
+		
+		self.errorTex = gl.glGenTextures(1)
+		gl.glBindTexture(gl.GL_TEXTURE_2D, self.errorTex)
+		gl.glTexImage2D(gl.GL_TEXTURE_2D, 0, gl.GL_RGBA, error_image.width(), error_image.height(), 0, gl.GL_RGBA, gl.GL_UNSIGNED_BYTE, errimg_data)
+		gl.glTexParameterf(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MIN_FILTER, gl.GL_NEAREST)
+		gl.glTexParameterf(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MAG_FILTER, gl.GL_NEAREST)
+		gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
+		
+		#get initial file modification times
+		self.image_modified = time.ctime(os.path.getmtime('./using/image.png'))
+		self.shader_modified = time.ctime(os.path.getmtime(fragmentshaderpath))
+		
+		#initialize periodic timer
+		self.timer = QtCore.QTimer()
+		self.timer.timeout.connect(self.timed_out)
+		self.timer.start(500)
+		
+	def timed_out(self):
+		if os.path.isfile('./using/image.png'):
+			temp = time.ctime(os.path.getmtime('./using/image.png'))
+			if not temp == self.image_modified:
+				input_image = QtGui.QImage(inputimagepath)
+				input_image = input_image.convertToFormat(QtGui.QImage.Format_ARGB32)
+				width = DEFAULT_WIDTH
+				height = width/input_image.width()*2*input_image.height()
+				img_data = np.empty(input_image.width()*input_image.height()*4, dtype=np.ubyte)
+				for i in range (0,input_image.height()):
+					for j in range (0,input_image.width()):
+						pixel = input_image.pixel(j,i)
+						img_data[((input_image.height()-i-1)*input_image.width()+j)*4+0] = QtGui.qRed(pixel)
+						img_data[((input_image.height()-i-1)*input_image.width()+j)*4+1] = QtGui.qGreen(pixel)
+						img_data[((input_image.height()-i-1)*input_image.width()+j)*4+2] = QtGui.qBlue(pixel)
+						img_data[((input_image.height()-i-1)*input_image.width()+j)*4+3] = 255
+				gl.glTexImage2D(gl.GL_TEXTURE_2D, 0, gl.GL_RGBA, input_image.width(), input_image.height(), 0, gl.GL_RGBA, gl.GL_UNSIGNED_BYTE, img_data)
+				self.repaint()
+			self.image_modified = temp
+			
+		if os.path.isfile(fragmentshaderpath):
+			temp = time.ctime(os.path.getmtime(fragmentshaderpath))
+			if not temp == self.shader_modified:
+				f = open(fragmentshaderpath, "r")
+				outputfragmentshader = f.read()
+				f.close()
+				vs = compile_vertex_shader(vertexshader)
+				try:
+					ofs = compile_fragment_shader(outputfragmentshader)
+					self.ofs_error = False
+				except RuntimeError as e:
+					print("Compilation error on fragment shader:\n\t{0}".format(e))
+					ofs = compile_fragment_shader(inputfragmentshader)
+					self.ofs_error = True
+				self.oshaders_program = link_shader_program(vs, ofs)
+				self.repaint()
+			self.shader_modified = temp
 
 	def paintGL(self):
 		"""Paint the scene."""
@@ -78,7 +139,10 @@ class GLWidget(QGLWidget):
 		# bind the VBO 
 		self.vbo.bind()
 		# bind the texture
-		gl.glBindTexture(gl.GL_TEXTURE_2D, self.inputTex)
+		if not self.ofs_error:
+			gl.glBindTexture(gl.GL_TEXTURE_2D, self.inputTex)
+		else:
+			gl.glBindTexture(gl.GL_TEXTURE_2D, self.errorTex)
 		#bind texture here!
 		loc = gl.glGetAttribLocation(self.ishaders_program, "vertex");
 		# these vertices contain 4 single precision coordinates
@@ -114,7 +178,7 @@ f.close()
 f = open(fragmentshaderpath, "r")
 outputfragmentshader = f.read()
 f.close()
-f = open('./using/inputcopy.glsl', "r")
+f = open('./resources/inputcopy.glsl', "r")
 inputfragmentshader = f.read()
 f.close()
 
@@ -139,12 +203,19 @@ for i in range (0,input_image.height()):
 		img_data[((input_image.height()-i-1)*input_image.width()+j)*4+1] = QtGui.qGreen(pixel)
 		img_data[((input_image.height()-i-1)*input_image.width()+j)*4+2] = QtGui.qBlue(pixel)
 		img_data[((input_image.height()-i-1)*input_image.width()+j)*4+3] = 255
-#ptr = input_image.bits()
-#ptr.setsize(input_image.byteCount())
-#img_data = np.copy(np.asarray(ptr))
-#img_data.resize(len(img_data)+1)
-#img_data[len(img_data)-1]=256 #move to make RGBA for OpenGL
-#img_data = img_data[1:]
+		
+error_image = QtGui.QImage('./resources/error.png')
+error_image = error_image.convertToFormat(QtGui.QImage.Format_ARGB32)
+width = DEFAULT_WIDTH
+height = width/error_image.width()*2*error_image.height()
+errimg_data = np.empty(error_image.width()*error_image.height()*4, dtype=np.ubyte)
+for i in range (0,error_image.height()):
+	for j in range (0,error_image.width()):
+		pixel = error_image.pixel(j,i)
+		errimg_data[((error_image.height()-i-1)*error_image.width()+j)*4+0] = QtGui.qRed(pixel)
+		errimg_data[((error_image.height()-i-1)*error_image.width()+j)*4+1] = QtGui.qGreen(pixel)
+		errimg_data[((error_image.height()-i-1)*error_image.width()+j)*4+2] = QtGui.qBlue(pixel)
+		errimg_data[((error_image.height()-i-1)*error_image.width()+j)*4+3] = 255
 
 # show the window
 win = create_window(TestWindow)

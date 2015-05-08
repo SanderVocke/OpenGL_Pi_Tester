@@ -2,7 +2,7 @@ READ THIS FIRST!
 
 INSTALLATION:
 
-install Python (I used 3.4).
+install Python (I used 3.4). If you have multiple Pythons installed, make sure Python 3.4 is the one that is in the PATH variable (the one being started when you type "python" in CMD).
 
 you need to use PIP (python package installer) to install PyOpenGL. With python 3.4 it's included, for lower versions google how to install it.
 

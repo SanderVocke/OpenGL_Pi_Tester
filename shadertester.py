@@ -25,6 +25,8 @@ DEFAULT_WIDTH = 1600
 class GLWidget(QGLWidget):
 	def initializeGL(self):
 		"""Initialize OpenGL, VBOs, upload data on the GPU, etc."""
+		self.width = width
+		self.height = height
 		self.ofs_error=False
 		# background color
 		gl.glClearColor(0, 0, 0, 0)
@@ -44,19 +46,32 @@ class GLWidget(QGLWidget):
 		self.ishaders_program = link_shader_program(vs, ifs)
 		self.oshaders_program = link_shader_program(vs, ofs)
 		#make textures
+		
+		#INPUT TEXTURE (RGBA IMAGE)
 		self.inputTex = gl.glGenTextures(1)
 		gl.glBindTexture(gl.GL_TEXTURE_2D, self.inputTex)
 		gl.glTexImage2D(gl.GL_TEXTURE_2D, 0, gl.GL_RGBA, input_image.width(), input_image.height(), 0, gl.GL_RGBA, gl.GL_UNSIGNED_BYTE, img_data)
 		gl.glTexParameterf(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MIN_FILTER, gl.GL_NEAREST)
 		gl.glTexParameterf(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MAG_FILTER, gl.GL_NEAREST)
 		gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
-		
+		#ERROR TEXTURE (FOR SHOWING IF SOMETHING WENT WRONG)
 		self.errorTex = gl.glGenTextures(1)
 		gl.glBindTexture(gl.GL_TEXTURE_2D, self.errorTex)
 		gl.glTexImage2D(gl.GL_TEXTURE_2D, 0, gl.GL_RGBA, error_image.width(), error_image.height(), 0, gl.GL_RGBA, gl.GL_UNSIGNED_BYTE, errimg_data)
 		gl.glTexParameterf(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MIN_FILTER, gl.GL_NEAREST)
 		gl.glTexParameterf(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MAG_FILTER, gl.GL_NEAREST)
 		gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
+		#OUTPUT TEXTURE (FOR STORING THE OUTPUT)
+		self.outTex = gl.glGenTextures(1)
+		gl.glBindTexture(gl.GL_TEXTURE_2D, self.outTex)
+		gl.glTexImage2D(gl.GL_TEXTURE_2D, 0, gl.GL_RGBA, input_image.width(), input_image.height(), 0, gl.GL_RGBA, gl.GL_UNSIGNED_BYTE, None)
+		gl.glTexParameterf(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MIN_FILTER, gl.GL_NEAREST)
+		gl.glTexParameterf(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MAG_FILTER, gl.GL_NEAREST)
+		gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
+		self.outFB = gl.glGenFramebuffers(1)
+		gl.glBindFramebuffer(gl.GL_FRAMEBUFFER,self.outFB)
+		gl.glFramebufferTexture2D(gl.GL_FRAMEBUFFER,gl.GL_COLOR_ATTACHMENT0,gl.GL_TEXTURE_2D,self.outTex,0)
+		gl.glBindFramebuffer(gl.GL_FRAMEBUFFER,0)
 		
 		#get initial file modification times
 		self.image_modified = time.ctime(os.path.getmtime('./using/image.png'))
@@ -107,7 +122,36 @@ class GLWidget(QGLWidget):
 
 	def paintGL(self):
 		"""Paint the scene."""
+		#DRAW PROCESSED VERSION TO OUTPUT TEXTURE
+		#use the program and write to output texture
+		gl.glBindFramebuffer(gl.GL_FRAMEBUFFER,self.outFB)
+		gl.glViewport(0,0,input_image.width(),input_image.height())
+		gl.glUseProgram(self.oshaders_program)
+		#set uniforms
+		gl.glUniform2f(gl.glGetUniformLocation(self.oshaders_program, "offset"), -1, -1)
+		gl.glUniform2f(gl.glGetUniformLocation(self.oshaders_program, "scale"), 2, 2)
+		gl.glUniform1i(gl.glGetUniformLocation(self.oshaders_program, "tex"), 0)
+		# bind the VBO 
+		self.vbo.bind()
+		# bind the texture
+		if not self.ofs_error:
+			gl.glBindTexture(gl.GL_TEXTURE_2D, self.inputTex)
+		else:
+			gl.glBindTexture(gl.GL_TEXTURE_2D, self.errorTex)
+		#bind texture here!
+		loc = gl.glGetAttribLocation(self.ishaders_program, "vertex");
+		# these vertices contain 4 single precision coordinates
+		gl.glVertexAttribPointer(loc, 4, gl.GL_FLOAT, gl.GL_FALSE, 16, None)
+		# tell OpenGL that the VBO contains an array of vertices
+		# prepare the shader        
+		gl.glEnableVertexAttribArray(loc)        
+		# draw "count" points from the VBO
+		gl.glDrawArrays(gl.GL_TRIANGLE_STRIP, 0, 4)
+		
+		#DRAW INPUT TO SCREEN
 		# clear the buffer
+		gl.glBindFramebuffer(gl.GL_FRAMEBUFFER,0)
+		gl.glViewport(0, 0, self.width, self.height)
 		gl.glClear(gl.GL_COLOR_BUFFER_BIT)
 		#use the program
 		gl.glUseProgram(self.ishaders_program)
@@ -129,19 +173,21 @@ class GLWidget(QGLWidget):
 		# draw "count" points from the VBO
 		gl.glDrawArrays(gl.GL_TRIANGLE_STRIP, 0, 4)
 		
+		#DRAW OUTPUT TEXTURE TO SCREEN
+		# clear the buffer
+		gl.glBindFramebuffer(gl.GL_FRAMEBUFFER,0)
+		gl.glViewport(0, 0, self.width, self.height)
+		#gl.glClear(gl.GL_COLOR_BUFFER_BIT)
 		#use the program
-		gl.glUseProgram(self.oshaders_program)
+		gl.glUseProgram(self.ishaders_program)
 		#set uniforms
-		gl.glUniform2f(gl.glGetUniformLocation(self.oshaders_program, "offset"), -1, -1)
-		gl.glUniform2f(gl.glGetUniformLocation(self.oshaders_program, "scale"), 2, 1)
-		gl.glUniform1i(gl.glGetUniformLocation(self.oshaders_program, "tex"), 0)
+		gl.glUniform2f(gl.glGetUniformLocation(self.ishaders_program, "offset"), -1, -1)
+		gl.glUniform2f(gl.glGetUniformLocation(self.ishaders_program, "scale"), 2, 1)
+		gl.glUniform1i(gl.glGetUniformLocation(self.ishaders_program, "tex"), 0)
 		# bind the VBO 
 		self.vbo.bind()
 		# bind the texture
-		if not self.ofs_error:
-			gl.glBindTexture(gl.GL_TEXTURE_2D, self.inputTex)
-		else:
-			gl.glBindTexture(gl.GL_TEXTURE_2D, self.errorTex)
+		gl.glBindTexture(gl.GL_TEXTURE_2D, self.outTex)
 		#bind texture here!
 		loc = gl.glGetAttribLocation(self.ishaders_program, "vertex");
 		# these vertices contain 4 single precision coordinates
@@ -151,12 +197,17 @@ class GLWidget(QGLWidget):
 		gl.glEnableVertexAttribArray(loc)        
 		# draw "count" points from the VBO
 		gl.glDrawArrays(gl.GL_TRIANGLE_STRIP, 0, 4)
+		
+		
+		
 
 	def resizeGL(self, width, height):
 		"""Called upon window resizing: reinitialize the viewport."""
 		# update the window size
 		# paint within the whole window
 		gl.glViewport(0, 0, width, height)
+		self.width = width
+		self.height = height
 
 # define a Qt window with an OpenGL widget inside it
 class TestWindow(QtGui.QMainWindow):

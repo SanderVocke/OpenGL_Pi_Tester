@@ -20,6 +20,7 @@ fragmentshaderpath='./using/fragmentshader.glsl'
 inputimagepath='./using/image.png'
 #window width
 DEFAULT_WIDTH = 1600
+NUM_STAGES = 3
 
 #the plot widget
 class GLWidget(QGLWidget):
@@ -148,16 +149,18 @@ class GLWidget(QGLWidget):
 		# draw "count" points from the VBO
 		gl.glDrawArrays(gl.GL_TRIANGLE_STRIP, 0, 4)
 		
+		stage = 2
+		
 		#DRAW INPUT TO SCREEN
 		# clear the buffer
 		gl.glBindFramebuffer(gl.GL_FRAMEBUFFER,0)
-		gl.glViewport(0, 0, self.width, self.height)
+		gl.glViewport(0, stage*int(self.height/NUM_STAGES), self.width, int(self.height/NUM_STAGES))
 		gl.glClear(gl.GL_COLOR_BUFFER_BIT)
 		#use the program
 		gl.glUseProgram(self.ishaders_program)
 		#set uniforms
-		gl.glUniform2f(gl.glGetUniformLocation(self.ishaders_program, "offset"), -1, 0)
-		gl.glUniform2f(gl.glGetUniformLocation(self.ishaders_program, "scale"), 2, 1)
+		gl.glUniform2f(gl.glGetUniformLocation(self.ishaders_program, "offset"), -1, -1)
+		gl.glUniform2f(gl.glGetUniformLocation(self.ishaders_program, "scale"), 2, 2)
 		gl.glUniform1i(gl.glGetUniformLocation(self.ishaders_program, "tex"), 0)
 		# bind the VBO 
 		self.vbo.bind()
@@ -173,16 +176,19 @@ class GLWidget(QGLWidget):
 		# draw "count" points from the VBO
 		gl.glDrawArrays(gl.GL_TRIANGLE_STRIP, 0, 4)
 		
+		stage = 1
+		
 		#DRAW OUTPUT TEXTURE TO SCREEN
 		# clear the buffer
 		gl.glBindFramebuffer(gl.GL_FRAMEBUFFER,0)
-		gl.glViewport(0, 0, self.width, self.height)
+		gl.glViewport(0, stage*int(self.height/NUM_STAGES), self.width, int(self.height/NUM_STAGES))
+		#gl.glClear(gl.GL_COLOR_BUFFER_BIT)
 		#gl.glClear(gl.GL_COLOR_BUFFER_BIT)
 		#use the program
 		gl.glUseProgram(self.ishaders_program)
 		#set uniforms
 		gl.glUniform2f(gl.glGetUniformLocation(self.ishaders_program, "offset"), -1, -1)
-		gl.glUniform2f(gl.glGetUniformLocation(self.ishaders_program, "scale"), 2, 1)
+		gl.glUniform2f(gl.glGetUniformLocation(self.ishaders_program, "scale"), 2, 2)
 		gl.glUniform1i(gl.glGetUniformLocation(self.ishaders_program, "tex"), 0)
 		# bind the VBO 
 		self.vbo.bind()
@@ -244,7 +250,7 @@ data = np.array([
 input_image = QtGui.QImage(inputimagepath)
 input_image = input_image.convertToFormat(QtGui.QImage.Format_ARGB32)
 width = DEFAULT_WIDTH
-height = width/input_image.width()*2*input_image.height()
+height = width/input_image.width()*NUM_STAGES*input_image.height()
 img_data = np.empty(input_image.width()*input_image.height()*4, dtype=np.ubyte)
 for i in range (0,input_image.height()):
 	for j in range (0,input_image.width()):

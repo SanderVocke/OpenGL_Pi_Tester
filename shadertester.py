@@ -27,6 +27,17 @@ coordinateshaderpath='./using/coordinate.glsl'
 #window width
 DEFAULT_WIDTH = 10
 MAX_COORDINATES = 100
+#drawing positions
+THRESHOLD_POS = (0,0)
+THRESHOLD_SIZE = (1000,200)
+SUMHOR_POS = (1000,0)
+SUMHOR_SIZE = (20,200)
+SUMVER_POS = (0,200)
+SUMVER_SIZE = (1000,20)
+INPUT_POS = (0,300)
+INPUT_SIZE = (1000,200)
+COORDINATE_POS = (0,510)
+COORDINATE_SIZE = (1000,20)
 
 #the plot widget
 class GLWidget(QGLWidget):
@@ -150,7 +161,7 @@ class GLWidget(QGLWidget):
 		return
 
 	def paintGL(self):
-		"""Paint the scene."""
+		"""Paint the scene."""		
 		#DRAW THRESHOLDED IMAGE TO TEXTURE
 		self.doShader(self.threshold_program, [input_image],
 			uniform2f = [("offset",-1,-1),("scale",2,2)],
@@ -177,9 +188,44 @@ class GLWidget(QGLWidget):
 			uniform1f = [("num_coords",MAX_COORDINATES),("hor_sum_height",self.sumhor_image.height),("ver_sum_width",self.sumver_image.width)],
 			render_target = self.coordinate_image,
 			readback = True
+		)		
+		
+		#DRAW THRESHOLDED TEXTURE ON SCREEN
+		self.doShader(self.input_program, [self.threshold_image],
+			uniform2f = [("offset",-1,-1),("scale",2,2)],
+			uniform1i = [("tex",0)],
+			position = THRESHOLD_POS, #position from bottom left in drawing window
+			size = THRESHOLD_SIZE #(width,height in drawing window)
+		)
+		#DRAW SUMMATION TEXTURES ON SCREEN
+		self.doShader(self.input_program, [self.sumhor_image],
+			uniform2f = [("offset",-1,-1),("scale",2,2)],
+			uniform1i = [("tex",0)],
+			position = SUMHOR_POS, #position from bottom left in drawing window
+			size = SUMHOR_SIZE #(width,height in drawing window)
+		)
+		self.doShader(self.input_program, [self.sumver_image],
+			uniform2f = [("offset",-1,-1),("scale",2,2)],
+			uniform1i = [("tex",0)],
+			position = SUMVER_POS, #position from bottom left in drawing window
+			size = SUMVER_SIZE #(width,height in drawing window)
+		)
+		#DRAW INPUT IMAGE ON SCREEN
+		self.doShader(self.input_program, [input_image],
+			uniform2f = [("offset",-1,-1),("scale",2,2)],
+			uniform1i = [("tex",0)],
+			position = INPUT_POS, #position from bottom left in drawing window
+			size = INPUT_SIZE #(width,height in drawing window)
+		)
+		#DRAW COORDINATE TEXTURE ON SCREEN
+		self.doShader(self.input_program, [self.coordinate_image],
+			uniform2f = [("offset",-1,-1),("scale",2,2)],
+			uniform1i = [("tex",0)],
+			position = COORDINATE_POS, #position from bottom left in drawing window
+			size = COORDINATE_SIZE #(width,height in drawing window)
 		)
 		
-		#store and print coordinates found
+		#store and print and show coordinates found
 		objects = []
 		factx = input_image.width/255
 		facty = input_image.height/255		
@@ -190,44 +236,22 @@ class GLWidget(QGLWidget):
 		print("\n\nObjects found:\n")
 		for x in objects:
 			print('\t{0},{1},{2},{3}'.format(x[0], x[1], x[2], x[3]))
-		
-		
-		#DRAW THRESHOLDED TEXTURE ON SCREEN
-		self.doShader(self.input_program, [self.threshold_image],
-			uniform2f = [("offset",-1,-1),("scale",2,2)],
-			uniform1i = [("tex",0)],
-			position = (0,0), #position from bottom left in drawing window
-			size = (1000,200) #(width,height in drawing window)
-		)
-		#DRAW SUMMATION TEXTURES ON SCREEN
-		self.doShader(self.input_program, [self.sumhor_image],
-			uniform2f = [("offset",-1,-1),("scale",2,2)],
-			uniform1i = [("tex",0)],
-			position = (1000,0), #position from bottom left in drawing window
-			size = (20,200) #(width,height in drawing window)
-		)
-		self.doShader(self.input_program, [self.sumver_image],
-			uniform2f = [("offset",-1,-1),("scale",2,2)],
-			uniform1i = [("tex",0)],
-			position = (0,200), #position from bottom left in drawing window
-			size = (1000,20) #(width,height in drawing window)
-		)
-		#DRAW INPUT IMAGE ON SCREEN
-		self.doShader(self.input_program, [input_image],
-			uniform2f = [("offset",-1,-1),("scale",2,2)],
-			uniform1i = [("tex",0)],
-			position = (0,300), #position from bottom left in drawing window
-			size = (1000,200) #(width,height in drawing window)
-		)
-		#DRAW COORDINATE TEXTURE ON SCREEN
-		self.doShader(self.input_program, [self.coordinate_image],
-			uniform2f = [("offset",-1,-1),("scale",2,2)],
-			uniform1i = [("tex",0)],
-			position = (0,510), #position from bottom left in drawing window
-			size = (1000,20) #(width,height in drawing window)
-		)
-		
-		#GET THE RESULT
+
+		#do opengl stuff
+		gl.glDisable(gl.GL_TEXTURE_2D)
+		gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, 0)
+		gl.glViewport(INPUT_POS[0],INPUT_POS[1],INPUT_SIZE[0],INPUT_SIZE[1])
+		for x in objects:
+			#draw lines			
+			gl.glColor(1,1,1)
+			gl.glBegin(gl.GL_LINE_STRIP)
+			gl.glVertex2f(x[0]/input_image.width, x[1]/input_image.height)
+			gl.glVertex2f((x[0]+x[2])/input_image.width, x[1]/input_image.height)
+			gl.glVertex2f((x[0]+x[2])/input_image.width, (x[1]+x[3])/input_image.height)
+			gl.glVertex2f(x[0]/input_image.width, (x[1]+x[3])/input_image.height)
+			gl.glVertex2f(x[0]/input_image.width, x[1]/input_image.height)
+			gl.glEnd()
+		gl.glEnable(gl.GL_TEXTURE_2D)			
 
 	def resizeGL(self, width, height):
 		"""Called upon window resizing: reinitialize the viewport."""

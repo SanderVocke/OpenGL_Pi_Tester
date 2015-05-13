@@ -11,9 +11,9 @@ void main(void)
 		sum = sum + texture2D(tex,vec2(step*i,tcoord[1])).r;
 	}
 	float result = sum/hor_steps;
-    //gl_FragColor = vec4(result,0.0f,0.0f,0.0f);
-	float found;
-	if(result>0.0f) found = 1.0f;
-	else discard;
-	gl_FragColor = vec4(result,0.0f,found,0.0f);
+	float found = 0.0f;
+	if(result>0.0f){
+		found = 1.0f;
+	}
+	gl_FragColor = vec4(result,0.0f,found,1.0f);
 }

@@ -11,15 +11,20 @@ import OpenGL.arrays.vbo as glvbo
 import numpy as np
 sys.path.insert(0, './dependencies/')
 from shadertester2 import *
+from shaderutils import *
 vertexshaderpath='./resources/vertexshader.glsl'
+defaultfragmentpath='./resources/inputcopy.glsl'
+errorimagepath='./resources/error.png'
 
 ##################################################
 ##SETTINGS
 ##################################################
-fragmentshaderpath='./using/fragmentshader.glsl'
+thresholdshaderpath='./using/thresholdshader.glsl'
+horizontalsummerpath='./using/summer_hor.glsl'
+verticalsummerpath='./using/summer_ver.glsl'
 inputimagepath='./using/image.png'
 #window width
-DEFAULT_WIDTH = 1600
+DEFAULT_WIDTH = 10
 NUM_STAGES = 4
 
 #the plot widget
@@ -28,93 +33,46 @@ class GLWidget(QGLWidget):
 		"""Initialize OpenGL, VBOs, upload data on the GPU, etc."""
 		self.width = width
 		self.height = height
-		self.ofs_error=False
-		self.sumhor_error=False
-		self.sumver_error=False
 		# background color
 		gl.glClearColor(0, 0, 0, 0)
 		# create a Vertex Buffer Object with the specified data
 		self.vbo = glvbo.VBO(self.data)
-		# compile the vertex shader
-		vs = compile_vertex_shader(vertexshader)
-		# compile the fragment shader
-		ifs = compile_fragment_shader(inputfragmentshader)
-		try:
-			ofs = compile_fragment_shader(outputfragmentshader)
-		except RuntimeError as e:
-			print("Compilation error on fragment shader:\n\t{0}".format(e))
-			ofs = compile_fragment_shader(inputfragmentshader)
-			self.ofs_error = True
-		try:
-			sumhor = compile_fragment_shader(summerhorizontalshader)
-		except RuntimeError as e:
-			print("Compilation error on horizontal summer shader:\n\t{0}".format(e))
-			sumhor = compile_fragment_shader(inputfragmentshader)
-			self.sumhor_error = True
-		try:
-			sumver = compile_fragment_shader(summerverticalshader)
-		except RuntimeError as e:
-			print("Compilation error on vertical summer shader:\n\t{0}".format(e))
-			sumver = compile_fragment_shader(inputfragmentshader)
-			self.sumver_error = True
-		# lnk in the vertex shader
-		self.ishaders_program = link_shader_program(vs, ifs)
-		self.oshaders_program = link_shader_program(vs, ofs)
-		self.sumhorshaders_program = link_shader_program(vs, sumhor)
-		self.sumvershaders_program = link_shader_program(vs, sumver)
-		#make textures
+		
+		#input shader program (to show without changes)
+		self.input_program = GShaderProgram()
+		self.input_program.load(vertexshaderpath,defaultfragmentpath,defaultfragmentpath)
+		#threshold shader program (to create filtered, thresholded image)
+		self.threshold_program = GShaderProgram()
+		self.threshold_program.load(vertexshaderpath,thresholdshaderpath,defaultfragmentpath)
+		#horizontal summer shader program (to make sums of rows)
+		self.sumhor_program = GShaderProgram()
+		self.sumhor_program.load(vertexshaderpath,horizontalsummerpath,defaultfragmentpath)
+		#vertical summer shader program (to make sums of columns)
+		self.sumver_program = GShaderProgram()
+		self.sumver_program.load(vertexshaderpath,verticalsummerpath,defaultfragmentpath)
+
+		
+		#make textures+framebuffers
 		
 		#INPUT TEXTURE (RGBA IMAGE)
-		self.inputTex = gl.glGenTextures(1)
-		gl.glBindTexture(gl.GL_TEXTURE_2D, self.inputTex)
-		gl.glTexImage2D(gl.GL_TEXTURE_2D, 0, gl.GL_RGBA, input_image.width(), input_image.height(), 0, gl.GL_RGBA, gl.GL_UNSIGNED_BYTE, img_data)
-		gl.glTexParameterf(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MIN_FILTER, gl.GL_NEAREST)
-		gl.glTexParameterf(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MAG_FILTER, gl.GL_NEAREST)
-		gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
+		input_image.toTexture()
 		#ERROR TEXTURE (FOR SHOWING IF SOMETHING WENT WRONG)
-		self.errorTex = gl.glGenTextures(1)
-		gl.glBindTexture(gl.GL_TEXTURE_2D, self.errorTex)
-		gl.glTexImage2D(gl.GL_TEXTURE_2D, 0, gl.GL_RGBA, error_image.width(), error_image.height(), 0, gl.GL_RGBA, gl.GL_UNSIGNED_BYTE, errimg_data)
-		gl.glTexParameterf(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MIN_FILTER, gl.GL_NEAREST)
-		gl.glTexParameterf(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MAG_FILTER, gl.GL_NEAREST)
-		gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
-		#OUTPUT TEXTURE (FOR STORING THE OUTPUT)
-		self.outTex = gl.glGenTextures(1)
-		gl.glBindTexture(gl.GL_TEXTURE_2D, self.outTex)
-		gl.glTexImage2D(gl.GL_TEXTURE_2D, 0, gl.GL_RGBA, input_image.width(), input_image.height(), 0, gl.GL_RGBA, gl.GL_UNSIGNED_BYTE, None)
-		gl.glTexParameterf(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MIN_FILTER, gl.GL_NEAREST)
-		gl.glTexParameterf(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MAG_FILTER, gl.GL_NEAREST)
-		gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
-		self.outFB = gl.glGenFramebuffers(1)
-		gl.glBindFramebuffer(gl.GL_FRAMEBUFFER,self.outFB)
-		gl.glFramebufferTexture2D(gl.GL_FRAMEBUFFER,gl.GL_COLOR_ATTACHMENT0,gl.GL_TEXTURE_2D,self.outTex,0)
-		gl.glBindFramebuffer(gl.GL_FRAMEBUFFER,0)
+		error_image.toTexture()
+		#THRESHOLDED TEXTURE
+		self.threshold_image = GImageTex()
+		self.threshold_image.make(input_image.width, input_image.height)
+		self.threshold_image.toTexture()
 		#HORIZONTAL SUMMING TEXTURE
-		self.sumhorTex = gl.glGenTextures(1)
-		gl.glBindTexture(gl.GL_TEXTURE_2D, self.sumhorTex)
-		gl.glTexImage2D(gl.GL_TEXTURE_2D, 0, gl.GL_RGBA, 1, input_image.height(), 0, gl.GL_RGBA, gl.GL_UNSIGNED_BYTE, None)
-		gl.glTexParameterf(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MIN_FILTER, gl.GL_NEAREST)
-		gl.glTexParameterf(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MAG_FILTER, gl.GL_NEAREST)
-		gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
-		self.sumhorFB = gl.glGenFramebuffers(1)
-		gl.glBindFramebuffer(gl.GL_FRAMEBUFFER,self.sumhorFB)
-		gl.glFramebufferTexture2D(gl.GL_FRAMEBUFFER,gl.GL_COLOR_ATTACHMENT0,gl.GL_TEXTURE_2D,self.sumhorTex,0)
-		gl.glBindFramebuffer(gl.GL_FRAMEBUFFER,0)
+		self.sumhor_image = GImageTex()
+		self.sumhor_image.make(1, input_image.height)
+		self.sumhor_image.toTexture()
 		#VERTICAL SUMMING TEXTURE
-		self.sumverTex = gl.glGenTextures(1)
-		gl.glBindTexture(gl.GL_TEXTURE_2D, self.sumverTex)
-		gl.glTexImage2D(gl.GL_TEXTURE_2D, 0, gl.GL_RGBA, input_image.width(), 1, 0, gl.GL_RGBA, gl.GL_UNSIGNED_BYTE, None)
-		gl.glTexParameterf(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MIN_FILTER, gl.GL_NEAREST)
-		gl.glTexParameterf(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MAG_FILTER, gl.GL_NEAREST)
-		gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
-		self.sumverFB = gl.glGenFramebuffers(1)
-		gl.glBindFramebuffer(gl.GL_FRAMEBUFFER,self.sumverFB)
-		gl.glFramebufferTexture2D(gl.GL_FRAMEBUFFER,gl.GL_COLOR_ATTACHMENT0,gl.GL_TEXTURE_2D,self.sumverTex,0)
-		gl.glBindFramebuffer(gl.GL_FRAMEBUFFER,0)
+		self.sumver_image = GImageTex()
+		self.sumver_image.make(input_image.width, 1)
+		self.sumver_image.toTexture()
 		
 		#get initial file modification times
-		self.image_modified = time.ctime(os.path.getmtime('./using/image.png'))
-		self.shader_modified = time.ctime(os.path.getmtime(fragmentshaderpath))
+		self.shader_modified = time.ctime(os.path.getmtime(thresholdshaderpath))
 		
 		#initialize periodic timer
 		self.timer = QtCore.QTimer()
@@ -122,231 +80,99 @@ class GLWidget(QGLWidget):
 		self.timer.start(500)
 		
 	def timed_out(self):
-		if os.path.isfile('./using/image.png'):
-			temp = time.ctime(os.path.getmtime('./using/image.png'))
-			if not temp == self.image_modified:
-				input_image = QtGui.QImage(inputimagepath)
-				input_image = input_image.convertToFormat(QtGui.QImage.Format_ARGB32)
-				width = DEFAULT_WIDTH
-				height = width/input_image.width()*2*input_image.height()
-				img_data = np.empty(input_image.width()*input_image.height()*4, dtype=np.ubyte)
-				for i in range (0,input_image.height()):
-					for j in range (0,input_image.width()):
-						pixel = input_image.pixel(j,i)
-						img_data[((input_image.height()-i-1)*input_image.width()+j)*4+0] = QtGui.qRed(pixel)
-						img_data[((input_image.height()-i-1)*input_image.width()+j)*4+1] = QtGui.qGreen(pixel)
-						img_data[((input_image.height()-i-1)*input_image.width()+j)*4+2] = QtGui.qBlue(pixel)
-						img_data[((input_image.height()-i-1)*input_image.width()+j)*4+3] = 255
-				gl.glTexImage2D(gl.GL_TEXTURE_2D, 0, gl.GL_RGBA, input_image.width(), input_image.height(), 0, gl.GL_RGBA, gl.GL_UNSIGNED_BYTE, img_data)
-				self.repaint()
-			self.image_modified = temp
-			
-		if os.path.isfile(fragmentshaderpath):
-			temp = time.ctime(os.path.getmtime(fragmentshaderpath))
-			if not temp == self.shader_modified:
-				f = open(fragmentshaderpath, "r")
-				outputfragmentshader = f.read()
-				f.close()
-				vs = compile_vertex_shader(vertexshader)
-				try:
-					ofs = compile_fragment_shader(outputfragmentshader)
-					self.ofs_error = False
-				except RuntimeError as e:
-					print("Compilation error on fragment shader:\n\t{0}".format(e))
-					ofs = compile_fragment_shader(inputfragmentshader)
-					self.ofs_error = True
-				self.oshaders_program = link_shader_program(vs, ofs)
-				self.repaint()
-			self.shader_modified = temp
+		input_image.updateIfModified()
+		error_image.updateIfModified()
+		self.threshold_program.updateIfModified()
+		self.sumhor_program.updateIfModified()
+		self.sumver_program.updateIfModified()
+		
+	def doShader(self, program, sources, uniform2f=[], uniform1f=[], uniform2i=[], uniform1i=[], render_target=None, position=(0,0), size=(100,100)):
+		if render_target == None:
+			#resize the screen if necessary
+			if position[0] + size[0] > self.width:
+				self.resizefunc(50,50,position[0]+size[0],self.height+1)
+			if position[1] + size[1] > self.height:
+				self.resizefunc(50,50,self.width,position[1]+size[1]+1)
+			#do opengl stuff
+			gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, 0)
+			gl.glViewport(position[0],position[1],size[0],size[1])
+		else:
+			gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, render_target.fb)
+			gl.glViewport(0,0,render_target.width,render_target.height)
+		#tell OpenGL which shader program to use for this render
+		gl.glUseProgram(program.program)
+		#set any uniform variables we got as arguments
+		for x in uniform1i: #tuple ("name", value)
+			gl.glUniform1i(gl.glGetUniformLocation(program.program, x[0]),x[1])
+		for x in uniform2i: #tuple ("name", value1, value2)
+			gl.glUniform2i(gl.glGetUniformLocation(program.program, x[0]),x[1],x[2])
+		for x in uniform1f: #tuple ("name", value)
+			gl.glUniform1f(gl.glGetUniformLocation(program.program, x[0]),x[1])
+		for x in uniform2f: #tuple ("name", value1, value2)
+			gl.glUniform2f(gl.glGetUniformLocation(program.program, x[0]),x[1],x[2])
+		#bind vertex buffer
+		self.vbo.bind()
+		#bind textures
+		for x in sources:
+			if not program.ferror:
+				gl.glBindTexture(gl.GL_TEXTURE_2D, x.tex)
+			else:
+				gl.glBindTexture(gl.GL_TEXTURE_2D, error_image.tex)
+		#do the actual drawing
+		loc = gl.glGetAttribLocation(self.input_program.program, "vertex");
+		gl.glVertexAttribPointer(loc, 4, gl.GL_FLOAT, gl.GL_FALSE, 16, None)
+		gl.glEnableVertexAttribArray(loc)
+		gl.glDrawArrays(gl.GL_TRIANGLE_STRIP, 0, 4)		
 
 	def paintGL(self):
 		"""Paint the scene."""
-		#DRAW PROCESSED VERSION TO OUTPUT TEXTURE
-		#use the program and write to output texture
-		gl.glBindFramebuffer(gl.GL_FRAMEBUFFER,self.outFB)
-		gl.glViewport(0,0,input_image.width(),input_image.height())
-		gl.glUseProgram(self.oshaders_program)
-		#set uniforms
-		gl.glUniform2f(gl.glGetUniformLocation(self.oshaders_program, "offset"), -1, -1)
-		gl.glUniform2f(gl.glGetUniformLocation(self.oshaders_program, "scale"), 2, 2)
-		gl.glUniform1i(gl.glGetUniformLocation(self.oshaders_program, "tex"), 0)
-		# bind the VBO 
-		self.vbo.bind()
-		# bind the texture
-		if not self.ofs_error:
-			gl.glBindTexture(gl.GL_TEXTURE_2D, self.inputTex)
-		else:
-			gl.glBindTexture(gl.GL_TEXTURE_2D, self.errorTex)
-		#bind texture here!
-		loc = gl.glGetAttribLocation(self.ishaders_program, "vertex");
-		# these vertices contain 4 single precision coordinates
-		gl.glVertexAttribPointer(loc, 4, gl.GL_FLOAT, gl.GL_FALSE, 16, None)
-		# tell OpenGL that the VBO contains an array of vertices
-		# prepare the shader        
-		gl.glEnableVertexAttribArray(loc)        
-		# draw "count" points from the VBO
-		gl.glDrawArrays(gl.GL_TRIANGLE_STRIP, 0, 4)
+		#DRAW THRESHOLDED IMAGE TO TEXTURE
+		self.doShader(self.threshold_program, [input_image],
+			uniform2f = [("offset",-1,-1),("scale",2,2)],
+			uniform1i = [("tex",0)],
+			render_target = self.threshold_image
+		)
+		#DRAW SUMMATION TEXTURES
+		self.doShader(self.sumhor_program, [self.threshold_image],
+			uniform2f = [("offset",-1,-1),("scale",2,2)],
+			uniform1i = [("tex",0)],
+			uniform1f = [("hor_steps",input_image.width)],
+			render_target = self.sumhor_image
+		)
+		self.doShader(self.sumver_program, [self.threshold_image],
+			uniform2f = [("offset",-1,-1),("scale",2,2)],
+			uniform1i = [("tex",0)],
+			uniform1f = [("ver_steps",input_image.height)],
+			render_target = self.sumver_image
+		)
 		
-		#DRAW HORIZONTAL AND VERTICAL SUMMERS
-		#use the program and write to output texture
-		gl.glBindFramebuffer(gl.GL_FRAMEBUFFER,self.sumhorFB)
-		gl.glViewport(0,0,1,input_image.height())
-		gl.glUseProgram(self.sumhorshaders_program)
-		#set uniforms
-		gl.glUniform2f(gl.glGetUniformLocation(self.sumhorshaders_program, "offset"), -1, -1)
-		gl.glUniform2f(gl.glGetUniformLocation(self.sumhorshaders_program, "scale"), 2, 2)
-		gl.glUniform1f(gl.glGetUniformLocation(self.sumhorshaders_program, "hor_steps"), input_image.width())
-		gl.glUniform1i(gl.glGetUniformLocation(self.sumhorshaders_program, "tex"), 0)
-		# bind the VBO 
-		self.vbo.bind()
-		# bind the texture
-		if not self.sumhor_error:
-			gl.glBindTexture(gl.GL_TEXTURE_2D, self.outTex)
-		else:
-			gl.glBindTexture(gl.GL_TEXTURE_2D, self.errorTex)
-		loc = gl.glGetAttribLocation(self.ishaders_program, "vertex");
-		# these vertices contain 4 single precision coordinates
-		gl.glVertexAttribPointer(loc, 4, gl.GL_FLOAT, gl.GL_FALSE, 16, None)
-		# tell OpenGL that the VBO contains an array of vertices
-		# prepare the shader        
-		gl.glEnableVertexAttribArray(loc)        
-		# draw "count" points from the VBO
-		gl.glDrawArrays(gl.GL_TRIANGLE_STRIP, 0, 4)
-		
-		#use the program and write to output texture
-		gl.glBindFramebuffer(gl.GL_FRAMEBUFFER,self.sumverFB)
-		gl.glViewport(0,0,input_image.width(),1)
-		gl.glUseProgram(self.sumvershaders_program)
-		#set uniforms
-		gl.glUniform2f(gl.glGetUniformLocation(self.sumvershaders_program, "offset"), -1, -1)
-		gl.glUniform2f(gl.glGetUniformLocation(self.sumvershaders_program, "scale"), 2, 2)
-		gl.glUniform1f(gl.glGetUniformLocation(self.sumvershaders_program, "ver_steps"), input_image.height())
-		gl.glUniform1i(gl.glGetUniformLocation(self.sumvershaders_program, "tex"), 0)
-		# bind the VBO 
-		self.vbo.bind()
-		# bind the texture
-		if not self.sumver_error:
-			gl.glBindTexture(gl.GL_TEXTURE_2D, self.outTex)
-		else:
-			gl.glBindTexture(gl.GL_TEXTURE_2D, self.errorTex)
-		loc = gl.glGetAttribLocation(self.ishaders_program, "vertex");
-		# these vertices contain 4 single precision coordinates
-		gl.glVertexAttribPointer(loc, 4, gl.GL_FLOAT, gl.GL_FALSE, 16, None)
-		# tell OpenGL that the VBO contains an array of vertices
-		# prepare the shader        
-		gl.glEnableVertexAttribArray(loc)        
-		# draw "count" points from the VBO
-		gl.glDrawArrays(gl.GL_TRIANGLE_STRIP, 0, 4)
-		
-		stage = 3
-		
-		#DRAW INPUT TO SCREEN
-		# clear the buffer
-		gl.glBindFramebuffer(gl.GL_FRAMEBUFFER,0)
-		gl.glViewport(0, stage*int(self.height/NUM_STAGES), self.width, int(self.height/NUM_STAGES))
-		gl.glClear(gl.GL_COLOR_BUFFER_BIT)
-		#use the program
-		gl.glUseProgram(self.ishaders_program)
-		#set uniforms
-		gl.glUniform2f(gl.glGetUniformLocation(self.ishaders_program, "offset"), -1, -1)
-		gl.glUniform2f(gl.glGetUniformLocation(self.ishaders_program, "scale"), 2, 2)
-		gl.glUniform1i(gl.glGetUniformLocation(self.ishaders_program, "tex"), 0)
-		# bind the VBO 
-		self.vbo.bind()
-		# bind the texture
-		gl.glBindTexture(gl.GL_TEXTURE_2D, self.inputTex)
-		#bind texture here!
-		loc = gl.glGetAttribLocation(self.ishaders_program, "vertex");
-		# these vertices contain 4 single precision coordinates
-		gl.glVertexAttribPointer(loc, 4, gl.GL_FLOAT, gl.GL_FALSE, 16, None)
-		# tell OpenGL that the VBO contains an array of vertices
-		# prepare the shader        
-		gl.glEnableVertexAttribArray(loc)        
-		# draw "count" points from the VBO
-		gl.glDrawArrays(gl.GL_TRIANGLE_STRIP, 0, 4)
-		
-		stage = 2
-		
-		#DRAW OUTPUT TEXTURE TO SCREEN
-		# clear the buffer
-		gl.glBindFramebuffer(gl.GL_FRAMEBUFFER,0)
-		gl.glViewport(0, stage*int(self.height/NUM_STAGES), self.width, int(self.height/NUM_STAGES))
-		#gl.glClear(gl.GL_COLOR_BUFFER_BIT)
-		#gl.glClear(gl.GL_COLOR_BUFFER_BIT)
-		#use the program
-		gl.glUseProgram(self.ishaders_program)
-		#set uniforms
-		gl.glUniform2f(gl.glGetUniformLocation(self.ishaders_program, "offset"), -1, -1)
-		gl.glUniform2f(gl.glGetUniformLocation(self.ishaders_program, "scale"), 2, 2)
-		gl.glUniform1i(gl.glGetUniformLocation(self.ishaders_program, "tex"), 0)
-		# bind the VBO 
-		self.vbo.bind()
-		# bind the texture
-		gl.glBindTexture(gl.GL_TEXTURE_2D, self.outTex)
-		#bind texture here!
-		loc = gl.glGetAttribLocation(self.ishaders_program, "vertex");
-		# these vertices contain 4 single precision coordinates
-		gl.glVertexAttribPointer(loc, 4, gl.GL_FLOAT, gl.GL_FALSE, 16, None)
-		# tell OpenGL that the VBO contains an array of vertices
-		# prepare the shader        
-		gl.glEnableVertexAttribArray(loc)        
-		# draw "count" points from the VBO
-		gl.glDrawArrays(gl.GL_TRIANGLE_STRIP, 0, 4)
-		
-		stage = 1
-		
-		#DRAW SUMMERS TO SCREEN
-		# clear the buffer
-		gl.glBindFramebuffer(gl.GL_FRAMEBUFFER,0)
-		gl.glViewport(0, stage*int(self.height/NUM_STAGES), self.width, int(self.height/NUM_STAGES))
-		#gl.glClear(gl.GL_COLOR_BUFFER_BIT)
-		#gl.glClear(gl.GL_COLOR_BUFFER_BIT)
-		#use the program
-		gl.glUseProgram(self.ishaders_program)
-		#set uniforms
-		gl.glUniform2f(gl.glGetUniformLocation(self.ishaders_program, "offset"), -1, -1)
-		gl.glUniform2f(gl.glGetUniformLocation(self.ishaders_program, "scale"), 2, 2)
-		gl.glUniform1i(gl.glGetUniformLocation(self.ishaders_program, "tex"), 0)
-		# bind the VBO 
-		self.vbo.bind()
-		# bind the texture
-		gl.glBindTexture(gl.GL_TEXTURE_2D, self.sumhorTex)
-		#bind texture here!
-		loc = gl.glGetAttribLocation(self.ishaders_program, "vertex");
-		# these vertices contain 4 single precision coordinates
-		gl.glVertexAttribPointer(loc, 4, gl.GL_FLOAT, gl.GL_FALSE, 16, None)
-		# tell OpenGL that the VBO contains an array of vertices
-		# prepare the shader        
-		gl.glEnableVertexAttribArray(loc)        
-		# draw "count" points from the VBO
-		gl.glDrawArrays(gl.GL_TRIANGLE_STRIP, 0, 4)
-		
-		stage = 0
-		
-		# clear the buffer
-		gl.glBindFramebuffer(gl.GL_FRAMEBUFFER,0)
-		gl.glViewport(0, stage*int(self.height/NUM_STAGES), self.width, int(self.height/NUM_STAGES))
-		#gl.glClear(gl.GL_COLOR_BUFFER_BIT)
-		#gl.glClear(gl.GL_COLOR_BUFFER_BIT)
-		#use the program
-		gl.glUseProgram(self.ishaders_program)
-		#set uniforms
-		gl.glUniform2f(gl.glGetUniformLocation(self.ishaders_program, "offset"), -1, -1)
-		gl.glUniform2f(gl.glGetUniformLocation(self.ishaders_program, "scale"), 2, 2)
-		gl.glUniform1i(gl.glGetUniformLocation(self.ishaders_program, "tex"), 0)
-		# bind the VBO 
-		self.vbo.bind()
-		# bind the texture
-		gl.glBindTexture(gl.GL_TEXTURE_2D, self.sumverTex)
-		#bind texture here!
-		loc = gl.glGetAttribLocation(self.ishaders_program, "vertex");
-		# these vertices contain 4 single precision coordinates
-		gl.glVertexAttribPointer(loc, 4, gl.GL_FLOAT, gl.GL_FALSE, 16, None)
-		# tell OpenGL that the VBO contains an array of vertices
-		# prepare the shader        
-		gl.glEnableVertexAttribArray(loc)        
-		# draw "count" points from the VBO
-		gl.glDrawArrays(gl.GL_TRIANGLE_STRIP, 0, 4)
+		#DRAW THRESHOLDED TEXTURE ON SCREEN
+		self.doShader(self.input_program, [self.threshold_image],
+			uniform2f = [("offset",-1,-1),("scale",2,2)],
+			uniform1i = [("tex",0)],
+			position = (0,0), #position from bottom left in drawing window
+			size = (1000,200) #(width,height in drawing window)
+		)
+		#DRAW SUMMATION TEXTURES ON SCREEN
+		self.doShader(self.input_program, [self.sumhor_image],
+			uniform2f = [("offset",-1,-1),("scale",2,2)],
+			uniform1i = [("tex",0)],
+			position = (1000,0), #position from bottom left in drawing window
+			size = (20,200) #(width,height in drawing window)
+		)
+		self.doShader(self.input_program, [self.sumver_image],
+			uniform2f = [("offset",-1,-1),("scale",2,2)],
+			uniform1i = [("tex",0)],
+			position = (0,200), #position from bottom left in drawing window
+			size = (1000,20) #(width,height in drawing window)
+		)
+		#DRAW INPUT IMAGE ON SCREEN
+		self.doShader(self.input_program, [input_image],
+			uniform2f = [("offset",-1,-1),("scale",2,2)],
+			uniform1i = [("tex",0)],
+			position = (0,300), #position from bottom left in drawing window
+			size = (1000,200) #(width,height in drawing window)
+		)
 
 	def resizeGL(self, width, height):
 		"""Called upon window resizing: reinitialize the viewport."""
@@ -363,6 +189,7 @@ class TestWindow(QtGui.QMainWindow):
 		# initialize the GL widget
 		self.widget = GLWidget()
 		self.widget.data = data
+		self.widget.resizefunc = self.setGeometry
 		# put the window at the screen position (100, 100)
 		self.setGeometry(50, 50, width, height)
 		self.setCentralWidget(self.widget)
@@ -372,7 +199,7 @@ class TestWindow(QtGui.QMainWindow):
 f = open(vertexshaderpath, "r")
 vertexshader = f.read()
 f.close()
-f = open(fragmentshaderpath, "r")
+f = open(thresholdshaderpath, "r")
 outputfragmentshader = f.read()
 f.close()
 f = open('./resources/inputcopy.glsl', "r")
@@ -394,32 +221,14 @@ data = np.array([
 1,1,1,1
 ], dtype=np.float32)
 
-#load the input image
-input_image = QtGui.QImage(inputimagepath)
-input_image = input_image.convertToFormat(QtGui.QImage.Format_ARGB32)
+input_image = GImageTex() #use the GImageTex class in shaderutils
+input_image.load(inputimagepath)			
+error_image = GImageTex()	
+error_image.load(errorimagepath)
+
+#set window width and height
 width = DEFAULT_WIDTH
-height = width/input_image.width()*NUM_STAGES*input_image.height()
-img_data = np.empty(input_image.width()*input_image.height()*4, dtype=np.ubyte)
-for i in range (0,input_image.height()):
-	for j in range (0,input_image.width()):
-		pixel = input_image.pixel(j,i)
-		img_data[((input_image.height()-i-1)*input_image.width()+j)*4+0] = QtGui.qRed(pixel)
-		img_data[((input_image.height()-i-1)*input_image.width()+j)*4+1] = QtGui.qGreen(pixel)
-		img_data[((input_image.height()-i-1)*input_image.width()+j)*4+2] = QtGui.qBlue(pixel)
-		img_data[((input_image.height()-i-1)*input_image.width()+j)*4+3] = 255
-		
-error_image = QtGui.QImage('./resources/error.png')
-error_image = error_image.convertToFormat(QtGui.QImage.Format_ARGB32)
-width = DEFAULT_WIDTH
-height = width/error_image.width()*2*error_image.height()
-errimg_data = np.empty(error_image.width()*error_image.height()*4, dtype=np.ubyte)
-for i in range (0,error_image.height()):
-	for j in range (0,error_image.width()):
-		pixel = error_image.pixel(j,i)
-		errimg_data[((error_image.height()-i-1)*error_image.width()+j)*4+0] = QtGui.qRed(pixel)
-		errimg_data[((error_image.height()-i-1)*error_image.width()+j)*4+1] = QtGui.qGreen(pixel)
-		errimg_data[((error_image.height()-i-1)*error_image.width()+j)*4+2] = QtGui.qBlue(pixel)
-		errimg_data[((error_image.height()-i-1)*error_image.width()+j)*4+3] = 255
+height = width/input_image.width*2*input_image.height	
 
 # show the window
 win = create_window(TestWindow)

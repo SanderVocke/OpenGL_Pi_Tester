@@ -12,5 +12,8 @@ void main(void)
 	}
 	float result = sum/hor_steps;
     //gl_FragColor = vec4(result,0.0f,0.0f,0.0f);
-	gl_FragColor = vec4(result*5,0.0f,0.0f,0.0f);
+	float found;
+	if(result>0.0f) found = 1.0f;
+	else discard;
+	gl_FragColor = vec4(result,0.0f,found,0.0f);
 }

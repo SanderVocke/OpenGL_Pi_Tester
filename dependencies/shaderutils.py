@@ -50,7 +50,7 @@ class GShaderProgram:
 		if (not ntimef == self.modtimef) or (not ntimev == self.modtimev):
 			self.modtimef = ntimef #update the time for next time	
 			self.modtimev = ntimev #update the time for next time			
-			gl.glDeleteProgram(self.program) #delete the old program
+			#gl.glDeleteProgram(self.program) #delete the old program
 			self.load(self.vpath,self.fpath,self.defaultfpath) #reload the image
 		
 
@@ -108,6 +108,6 @@ class GImageTex:
 		if not ntime == self.modtime:
 			self.modtime = ntime #update the time for next time
 			self.load(self.path) #reload the image
-			gl.glDeleteTextures(self.tex) #delete the old texture
+			#gl.glDeleteTextures(self.tex) #delete the old texture
 			self.toTexture() #make a new texture
 			

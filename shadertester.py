@@ -15,6 +15,7 @@ from shaderutils import *
 vertexshaderpath='./resources/vertexshader.glsl'
 defaultfragmentpath='./resources/inputcopy.glsl'
 errorimagepath='./resources/error.png'
+instructionimagepath='./resources/instruct.png'
 
 ##################################################
 ##SETTINGS
@@ -24,6 +25,7 @@ horizontalsummerpath='./using/summer_hor.glsl'
 verticalsummerpath='./using/summer_ver.glsl'
 inputimagepath='./using/image.png'
 coordinateshaderpath='./using/coordinate.glsl'
+
 #window width
 DEFAULT_WIDTH = 10
 MAX_COORDINATES = 100
@@ -38,6 +40,8 @@ INPUT_POS = (0,300)
 INPUT_SIZE = (1000,200)
 COORDINATE_POS = (0,510)
 COORDINATE_SIZE = (1000,20)
+INSTRUCTION_POS = (0,550)
+INSTRUCTION_SIZE = (1000,300)
 
 #the plot widget
 class GLWidget(QGLWidget):
@@ -73,6 +77,8 @@ class GLWidget(QGLWidget):
 		input_image.toTexture()
 		#ERROR TEXTURE (FOR SHOWING IF SOMETHING WENT WRONG)
 		error_image.toTexture()
+		#INSTRUCTION TEXTURE
+		instruction_image.toTexture()
 		#THRESHOLDED TEXTURE
 		self.threshold_image = GImageTex()
 		self.threshold_image.make(input_image.width, input_image.height)
@@ -93,14 +99,15 @@ class GLWidget(QGLWidget):
 		#get initial file modification times
 		self.shader_modified = time.ctime(os.path.getmtime(thresholdshaderpath))
 		
-		#initialize periodic timer
+		#initialize periodic timer that checks for file updates
 		self.timer = QtCore.QTimer()
 		self.timer.timeout.connect(self.timed_out)
 		self.timer.start(500)
 		
-	def timed_out(self):
+	def timed_out(self): #check if any image or shader was changed
 		input_image.updateIfModified()
 		error_image.updateIfModified()
+		instruction_image.updateIfModified()
 		self.threshold_program.updateIfModified()
 		self.sumhor_program.updateIfModified()
 		self.sumver_program.updateIfModified()
@@ -217,6 +224,13 @@ class GLWidget(QGLWidget):
 			position = INPUT_POS, #position from bottom left in drawing window
 			size = INPUT_SIZE #(width,height in drawing window)
 		)
+		#DRAW INSTRUCTIONS IMAGE ON SCREEN
+		self.doShader(self.input_program, [instruction_image],
+			uniform2f = [("offset",-1,-1),("scale",2,2)],
+			uniform1i = [("tex",0)],
+			position = INSTRUCTION_POS, #position from bottom left in drawing window
+			size = INSTRUCTION_SIZE #(width,height in drawing window)
+		)
 		#DRAW COORDINATE TEXTURE ON SCREEN
 		self.doShader(self.input_program, [self.coordinate_image],
 			uniform2f = [("offset",-1,-1),("scale",2,2)],
@@ -304,6 +318,8 @@ input_image = GImageTex() #use the GImageTex class in shaderutils
 input_image.load(inputimagepath)			
 error_image = GImageTex()	
 error_image.load(errorimagepath)
+instruction_image = GImageTex()
+instruction_image.load(instructionimagepath)
 
 #set window width and height
 width = DEFAULT_WIDTH

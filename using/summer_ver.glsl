@@ -1,3 +1,9 @@
+/*
+VERTICAL SUMMER SHADER
+
+This is almost identical to the horizontal summer shader. Please see that one for comments and explanation.
+*/
+
 varying vec2 tcoord;
 uniform sampler2D tex;
 uniform float ver_steps;

@@ -21,8 +21,10 @@ instructionimagepath='./resources/instruct.png'
 ##SETTINGS
 ##################################################
 thresholdshaderpath='./using/thresholdshader.glsl'
-horizontalsummerpath='./using/summer_hor.glsl'
-verticalsummerpath='./using/summer_ver.glsl'
+horizontalsummer1path='./using/summer_hor.glsl'
+horizontalsummer2path='./using/summer_hor.glsl'
+verticalsummer1path='./using/summer_ver.glsl'
+verticalsummer2path='./using/summer_ver.glsl'
 inputimagepath='./using/image.png'
 coordinateshaderpath='./using/coordinate.glsl'
 
@@ -32,15 +34,17 @@ MAX_COORDINATES = 100
 #drawing positions
 THRESHOLD_POS = (0,0)
 THRESHOLD_SIZE = (1000,200)
-SUMHOR_POS = (1000,0)
-SUMHOR_SIZE = (20,200)
-SUMVER_POS = (0,200)
-SUMVER_SIZE = (1000,20)
-INPUT_POS = (0,300)
+SUMHOR1_POS = (1000,0)
+SUMHOR1_SIZE = (200,200)
+SUMHOR2_POS = (1205,0)
+SUMHOR2_SIZE = (15,200)
+SUMVER1_POS = (0,200)
+SUMVER1_SIZE = (1000,100)
+SUMVER2_POS = (0,405)
+SUMVER2_SIZE = (1000,15)
+INPUT_POS = (0,430)
 INPUT_SIZE = (1000,200)
-COORDINATE_POS = (0,510)
-COORDINATE_SIZE = (1000,20)
-INSTRUCTION_POS = (0,550)
+INSTRUCTION_POS = (0,650)
 INSTRUCTION_SIZE = (1000,300)
 
 #the plot widget
@@ -60,16 +64,18 @@ class GLWidget(QGLWidget):
 		#threshold shader program (to create filtered, thresholded image)
 		self.threshold_program = GShaderProgram()
 		self.threshold_program.load(vertexshaderpath,thresholdshaderpath,defaultfragmentpath)
-		#horizontal summer shader program (to make sums of rows)
-		self.sumhor_program = GShaderProgram()
-		self.sumhor_program.load(vertexshaderpath,horizontalsummerpath,defaultfragmentpath)
-		#vertical summer shader program (to make sums of columns)
-		self.sumver_program = GShaderProgram()
-		self.sumver_program.load(vertexshaderpath,verticalsummerpath,defaultfragmentpath)
-		#coordinate finder shader
-		self.coordinate_program = GShaderProgram()
-		self.coordinate_program.load(vertexshaderpath,coordinateshaderpath,defaultfragmentpath)
-
+		#horizontal summer shader program (to make sums of rows), stage 1
+		self.sumhor_program1 = GShaderProgram()
+		self.sumhor_program1.load(vertexshaderpath,horizontalsummer1path,defaultfragmentpath)
+		#horizontal summer shader program (to make sums of rows), stage 2
+		self.sumhor_program2 = GShaderProgram()
+		self.sumhor_program2.load(vertexshaderpath,horizontalsummer2path,defaultfragmentpath)
+		#vertical summer shader program (to make sums of columns), stage 1
+		self.sumver_program1 = GShaderProgram()
+		self.sumver_program1.load(vertexshaderpath,verticalsummer1path,defaultfragmentpath)
+		#vertical summer shader program (to make sums of columns), stage 2
+		self.sumver_program2 = GShaderProgram()
+		self.sumver_program2.load(vertexshaderpath,verticalsummer2path,defaultfragmentpath)
 		
 		#make textures+framebuffers
 		
@@ -83,18 +89,22 @@ class GLWidget(QGLWidget):
 		self.threshold_image = GImageTex()
 		self.threshold_image.make(input_image.width, input_image.height)
 		self.threshold_image.toTexture()
-		#HORIZONTAL SUMMING TEXTURE
-		self.sumhor_image = GImageTex()
-		self.sumhor_image.make(1, input_image.height)
-		self.sumhor_image.toTexture()
-		#VERTICAL SUMMING TEXTURE
-		self.sumver_image = GImageTex()
-		self.sumver_image.make(input_image.width, 1)
-		self.sumver_image.toTexture()
-		#COORDINATE HOLDING TEXTURE
-		self.coordinate_image = GImageTex()
-		self.coordinate_image.make(MAX_COORDINATES, 1)
-		self.coordinate_image.toTexture()
+		#HORIZONTAL SUMMING TEXTURE, STAGE 1
+		self.sumhor_image1 = GImageTex()
+		self.sumhor_image1.make(int(input_image.width/64)+1, input_image.height)
+		self.sumhor_image1.toTexture()
+		#HORIZONTAL SUMMING TEXTURE, STAGE 2
+		self.sumhor_image2 = GImageTex()
+		self.sumhor_image2.make(1, input_image.height)
+		self.sumhor_image2.toTexture()
+		#VERTICAL SUMMING TEXTURE, STAGE 1
+		self.sumver_image1 = GImageTex()
+		self.sumver_image1.make(input_image.width, int(input_image.height/64)+1)
+		self.sumver_image1.toTexture()
+		#VERTICAL SUMMING TEXTURE, STAGE 2
+		self.sumver_image2 = GImageTex()
+		self.sumver_image2.make(input_image.width, 1)
+		self.sumver_image2.toTexture()
 		
 		#get initial file modification times
 		self.shader_modified = time.ctime(os.path.getmtime(thresholdshaderpath))
@@ -109,9 +119,10 @@ class GLWidget(QGLWidget):
 		error_image.updateIfModified()
 		instruction_image.updateIfModified()
 		self.threshold_program.updateIfModified()
-		self.sumhor_program.updateIfModified()
-		self.sumver_program.updateIfModified()
-		self.coordinate_program.updateIfModified()
+		self.sumhor_program1.updateIfModified()
+		self.sumhor_program2.updateIfModified()
+		self.sumver_program1.updateIfModified()
+		self.sumver_program2.updateIfModified()
 		
 	def doShader(self, program, sources, uniform2f=[], uniform1f=[], uniform2i=[], uniform1i=[], render_target=None, position=(0,0), size=(100,100), readback=False):
 		if render_target == None:
@@ -175,27 +186,31 @@ class GLWidget(QGLWidget):
 			uniform1i = [("tex",0)],
 			render_target = self.threshold_image
 		)
-		#DRAW SUMMATION TEXTURES
-		self.doShader(self.sumhor_program, [self.threshold_image],
+		#DRAW SUMMATION TEXTURES (NOTE: SET THE PIXELS OUTSIDE THE EDGES TO BLACK!!!)
+		self.doShader(self.sumhor_program1, [self.threshold_image],
 			uniform2f = [("offset",-1,-1),("scale",2,2)],
 			uniform1i = [("tex",0)],
-			uniform1f = [("hor_steps",input_image.width)],
-			render_target = self.sumhor_image
+			uniform1f = [("step",1/input_image.width)],
+			render_target = self.sumhor_image1
 		)
-		self.doShader(self.sumver_program, [self.threshold_image],
+		self.doShader(self.sumhor_program2, [self.sumhor_image1],
 			uniform2f = [("offset",-1,-1),("scale",2,2)],
 			uniform1i = [("tex",0)],
-			uniform1f = [("ver_steps",input_image.height)],
-			render_target = self.sumver_image
+			uniform1f = [("step",1/64)],
+			render_target = self.sumhor_image2
 		)
-		#"DRAW" COORDINATE TEXTURE
-		buf = self.doShader(self.coordinate_program, [self.sumhor_image, self.sumver_image],
+		self.doShader(self.sumver_program1, [self.threshold_image],
 			uniform2f = [("offset",-1,-1),("scale",2,2)],
-			uniform1i = [("hor_sum_tex",0),("ver_sum_tex",1)],
-			uniform1f = [("num_coords",MAX_COORDINATES),("hor_sum_height",self.sumhor_image.height),("ver_sum_width",self.sumver_image.width)],
-			render_target = self.coordinate_image,
-			readback = True
-		)		
+			uniform1i = [("tex",0)],
+			uniform1f = [("step",1/input_image.height)],
+			render_target = self.sumver_image1
+		)
+		self.doShader(self.sumver_program2, [self.sumver_image1],
+			uniform2f = [("offset",-1,-1),("scale",2,2)],
+			uniform1i = [("tex",0)],
+			uniform1f = [("step",1/64)],
+			render_target = self.sumver_image2
+		)
 		
 		#DRAW THRESHOLDED TEXTURE ON SCREEN
 		self.doShader(self.input_program, [self.threshold_image],
@@ -205,17 +220,29 @@ class GLWidget(QGLWidget):
 			size = THRESHOLD_SIZE #(width,height in drawing window)
 		)
 		#DRAW SUMMATION TEXTURES ON SCREEN
-		self.doShader(self.input_program, [self.sumhor_image],
+		self.doShader(self.input_program, [self.sumhor_image1],
 			uniform2f = [("offset",-1,-1),("scale",2,2)],
 			uniform1i = [("tex",0)],
-			position = SUMHOR_POS, #position from bottom left in drawing window
-			size = SUMHOR_SIZE #(width,height in drawing window)
+			position = SUMHOR1_POS, #position from bottom left in drawing window
+			size = SUMHOR1_SIZE #(width,height in drawing window)
 		)
-		self.doShader(self.input_program, [self.sumver_image],
+		self.doShader(self.input_program, [self.sumhor_image2],
 			uniform2f = [("offset",-1,-1),("scale",2,2)],
 			uniform1i = [("tex",0)],
-			position = SUMVER_POS, #position from bottom left in drawing window
-			size = SUMVER_SIZE #(width,height in drawing window)
+			position = SUMHOR2_POS, #position from bottom left in drawing window
+			size = SUMHOR2_SIZE #(width,height in drawing window)
+		)
+		self.doShader(self.input_program, [self.sumver_image1],
+			uniform2f = [("offset",-1,-1),("scale",2,2)],
+			uniform1i = [("tex",0)],
+			position = SUMVER1_POS, #position from bottom left in drawing window
+			size = SUMVER1_SIZE #(width,height in drawing window)
+		)
+		self.doShader(self.input_program, [self.sumver_image2],
+			uniform2f = [("offset",-1,-1),("scale",2,2)],
+			uniform1i = [("tex",0)],
+			position = SUMVER2_POS, #position from bottom left in drawing window
+			size = SUMVER2_SIZE #(width,height in drawing window)
 		)
 		#DRAW INPUT IMAGE ON SCREEN
 		self.doShader(self.input_program, [input_image],
@@ -231,41 +258,37 @@ class GLWidget(QGLWidget):
 			position = INSTRUCTION_POS, #position from bottom left in drawing window
 			size = INSTRUCTION_SIZE #(width,height in drawing window)
 		)
-		#DRAW COORDINATE TEXTURE ON SCREEN
-		self.doShader(self.input_program, [self.coordinate_image],
-			uniform2f = [("offset",-1,-1),("scale",2,2)],
-			uniform1i = [("tex",0)],
-			position = COORDINATE_POS, #position from bottom left in drawing window
-			size = COORDINATE_SIZE #(width,height in drawing window)
-		)
 		
-		#store and print and show coordinates found
-		objects = []
-		factx = input_image.width/255
-		facty = input_image.height/255		
-		for x in range(0,MAX_COORDINATES):
-			if not buf[x*4+2]:
-				break #no more objects
-			objects.append((int(buf[x*4]*factx),int(buf[x*4+1]*facty),int(buf[x*4+2]*factx),int(buf[x*4+3]*facty)))
-		print("\n\nObjects found:\n")
-		for x in objects:
-			print('\t{0},{1},{2},{3}'.format(x[0], x[1], x[2], x[3]))
-
-		#do opengl stuff
-		gl.glDisable(gl.GL_TEXTURE_2D)
-		gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, 0)
-		gl.glViewport(INPUT_POS[0],INPUT_POS[1],INPUT_SIZE[0],INPUT_SIZE[1])
-		for x in objects:
-			#draw lines			
-			gl.glColor(1,1,1)
-			gl.glBegin(gl.GL_LINE_STRIP)
-			gl.glVertex2f(x[0]/input_image.width, x[1]/input_image.height)
-			gl.glVertex2f((x[0]+x[2])/input_image.width, x[1]/input_image.height)
-			gl.glVertex2f((x[0]+x[2])/input_image.width, (x[1]+x[3])/input_image.height)
-			gl.glVertex2f(x[0]/input_image.width, (x[1]+x[3])/input_image.height)
-			gl.glVertex2f(x[0]/input_image.width, x[1]/input_image.height)
-			gl.glEnd()
-		gl.glEnable(gl.GL_TEXTURE_2D)			
+		
+		##store and print and show coordinates found
+		#objects = []
+		#factx = input_image.width/255
+		#facty = input_image.height/255		
+		#for x in range(0,MAX_COORDINATES):
+		#	if not buf[x*4+2]:
+		#		break #no more objects
+		#	objects.append((int(buf[x*4]*factx),int(buf[x*4+1]*facty),int(buf[x*4+2]*factx),int(buf[x*4+3]*facty)))
+		#print("\n\nObjects found:\n")
+		#for x in objects:
+		#	print('\t{0},{1},{2},{3}'.format(x[0], x[1], x[2], x[3]))
+        #
+		##do opengl stuff
+		#gl.glDisable(gl.GL_TEXTURE_2D)
+		#gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, 0)
+		#gl.glViewport(INPUT_POS[0],INPUT_POS[1],INPUT_SIZE[0],INPUT_SIZE[1])
+		#for x in objects:
+		#	#draw lines			
+		#	gl.glColor(1,1,1)
+		#	gl.glBegin(gl.GL_LINE_STRIP)
+		#	gl.glVertex2f(x[0]/input_image.width, x[1]/input_image.height)
+		#	gl.glVertex2f((x[0]+x[2])/input_image.width, x[1]/input_image.height)
+		#	gl.glVertex2f((x[0]+x[2])/input_image.width, (x[1]+x[3])/input_image.height)
+		#	gl.glVertex2f(x[0]/input_image.width, (x[1]+x[3])/input_image.height)
+		#	gl.glVertex2f(x[0]/input_image.width, x[1]/input_image.height)
+		#	gl.glEnd()
+		#gl.glEnable(gl.GL_TEXTURE_2D)			
+		
+		gl.glFinish()
 
 	def resizeGL(self, width, height):
 		"""Called upon window resizing: reinitialize the viewport."""
@@ -287,23 +310,6 @@ class TestWindow(QtGui.QMainWindow):
 		self.setGeometry(50, 50, width, height)
 		self.setCentralWidget(self.widget)
 		self.show()
-
-#load the shaders
-f = open(vertexshaderpath, "r")
-vertexshader = f.read()
-f.close()
-f = open(thresholdshaderpath, "r")
-outputfragmentshader = f.read()
-f.close()
-f = open('./resources/inputcopy.glsl', "r")
-inputfragmentshader = f.read()
-f.close()
-f = open("./using/summer_ver.glsl")
-summerverticalshader = f.read()
-f.close()
-f = open("./using/summer_hor.glsl")
-summerhorizontalshader = f.read()
-f.close()
 
 
 #fill the vertex buffer

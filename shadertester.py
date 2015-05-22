@@ -27,6 +27,8 @@ verticalsummer1path='./using/summer_ver.glsl'
 verticalsummer2path='./using/summer_ver.glsl'
 inputimagepath='./using/image.png'
 coordinateshaderpath='./using/coordinate.glsl'
+erodeshaderpath='./using/erodefragshader_ours.glsl'
+dilateshaderpath='./using/dilatefragshader_ours.glsl'
 
 #window width
 DEFAULT_WIDTH = 10
@@ -64,6 +66,12 @@ class GLWidget(QGLWidget):
 		#threshold shader program (to create filtered, thresholded image)
 		self.threshold_program = GShaderProgram()
 		self.threshold_program.load(vertexshaderpath,thresholdshaderpath,defaultfragmentpath)
+		# erode shader program (to do morphological erode operation on the image)
+		self.erode_program = GShaderProgram()
+		self.erode_program.load(vertexshaderpath,erodeshaderpath,defaultfragmentpath)
+		# dilate shader program (to do morphological dilate operation on the image)
+		self.dilate_program = GShaderProgram()
+		self.dilate_program.load(vertexshaderpath,dilateshaderpath,defaultfragmentpath)
 		#horizontal summer shader program (to make sums of rows), stage 1
 		self.sumhor_program1 = GShaderProgram()
 		self.sumhor_program1.load(vertexshaderpath,horizontalsummer1path,defaultfragmentpath)
@@ -89,6 +97,14 @@ class GLWidget(QGLWidget):
 		self.threshold_image = GImageTex()
 		self.threshold_image.make(input_image.width, input_image.height)
 		self.threshold_image.toTexture()
+		# ERODED TEXTURE
+		self.erode_image = GImageTex()
+		self.erode_image.make(input_image.width, input_image.height)
+		self.erode_image.toTexture()
+		# DILATED TEXTURE
+		self.dilate_image = GImageTex()
+		self.dilate_image.make(input_image.width, input_image.height)
+		self.dilate_image.toTexture()
 		#HORIZONTAL SUMMING TEXTURE, STAGE 1
 		self.sumhor_image1 = GImageTex()
 		self.sumhor_image1.make(int(input_image.width/64)+1, input_image.height)
@@ -119,6 +135,8 @@ class GLWidget(QGLWidget):
 		error_image.updateIfModified()
 		instruction_image.updateIfModified()
 		self.threshold_program.updateIfModified()
+		self.erode_program.updateIfModified()
+		self.dilate_program.updateIfModified()
 		self.sumhor_program1.updateIfModified()
 		self.sumhor_program2.updateIfModified()
 		self.sumver_program1.updateIfModified()
@@ -186,8 +204,22 @@ class GLWidget(QGLWidget):
 			uniform1i = [("tex",0)],
 			render_target = self.threshold_image
 		)
+		#DRAW ERODED IMAGE TO TEXTURE
+		self.doShader(self.erode_program, [threshold_image],
+            #uniform1f = [("stepsize_x",1/input_image.width),("stepsize_y",1/input_image.height)],
+			uniform2f = [("offset",-1,-1),("scale",2,2),("texelsize",1/input_image.width,1/input_image.height)],
+			uniform1i = [("tex",0)],
+			render_target = self.erode_image
+		)
+		#DRAW DILATED IMAGE TO TEXTURE
+		# self.doShader(self.dilate_program, [erode_image],
+			# uniform2f = [("offset",-1,-1),("scale",2,2),("texelsize",1/input_image.width,1/input_image.height)],
+			# uniform1i = [("tex",0)],
+			# render_target = self.dilate_image
+		# )
 		#DRAW SUMMATION TEXTURES (NOTE: SET THE PIXELS OUTSIDE THE EDGES TO BLACK!!!)
-		self.doShader(self.sumhor_program1, [self.threshold_image],
+		#self.doShader(self.sumhor_program1, [self.dilate_image],
+		self.doShader(self.sumhor_program1, [self.erode_image],
 			uniform2f = [("offset",-1,-1),("scale",2,2)],
 			uniform1i = [("tex",0)],
 			uniform1f = [("step",1/input_image.width)],
@@ -219,6 +251,20 @@ class GLWidget(QGLWidget):
 			position = THRESHOLD_POS, #position from bottom left in drawing window
 			size = THRESHOLD_SIZE #(width,height in drawing window)
 		)
+		#DRAW ERODED TEXTURE ON SCREEN
+		self.doShader(self.input_program, [self.erode_image],
+			uniform2f = [("offset",-1,-1),("scale",2,2),("texelsize",1/input_image.width,1/input_image.height)],
+			uniform1i = [("tex",0)],
+			position = INPUT_POS, #position from bottom left in drawing window
+			size = THRESHOLD_SIZE #(width,height in drawing window)
+		)
+		#DRAW DILATED TEXTURE ON SCREEN
+		# self.doShader(self.input_program, [self.dilate_image],
+			# uniform2f = [("offset",-1,-1),("scale",2,2),("texelsize",1/input_image.width,1/input_image.height)],
+			# uniform1i = [("tex",0)],
+			# position = INPUT_POS, #position from bottom left in drawing window
+			# size = THRESHOLD_SIZE #(width,height in drawing window)
+		# )
 		#DRAW SUMMATION TEXTURES ON SCREEN
 		self.doShader(self.input_program, [self.sumhor_image1],
 			uniform2f = [("offset",-1,-1),("scale",2,2)],

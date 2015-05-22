@@ -4,9 +4,9 @@ uniform vec2 texelsize;
 void main(void) 
 {
 	vec4 col = vec4(1);
-	for(int xoffset = -1; xoffset <= 1; xoffset++)
+	for(int xoffset = -3; xoffset <= 4; xoffset++)
 	{
-		for(int yoffset = -1; yoffset <= 1; yoffset++)
+		for(int yoffset = -3; yoffset <= 4; yoffset++)
 		{
 			vec2 offset = vec2(xoffset,yoffset);
 			col = min(col,texture2D(tex,tcoord+offset*texelsize));

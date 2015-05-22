@@ -251,7 +251,7 @@ class GLWidget(QGLWidget):
 			uniform1f = [("step",1/64)],
 			render_target = self.sumhor_image2
 		)
-		self.doShader(self.sumver_program1, [self.dilate_image],
+		self.doShader(self.sumver_program1, [self.erode_image],
 			uniform2f = [("offset",-1,-1),("scale",2,2)],
 			uniform1i = [("tex",0)],
 			uniform1f = [("step",1/input_image.height)],
@@ -310,20 +310,20 @@ class GLWidget(QGLWidget):
 			position = SUMVER2_POS, #position from bottom left in drawing window
 			size = SUMVER2_SIZE #(width,height in drawing window)
 		)
-		#DRAW INPUT IMAGE ON SCREEN
+		# #DRAW INPUT IMAGE ON SCREEN
 		self.doShader(self.input_program, [input_image],
 			uniform2f = [("offset",-1,-1),("scale",2,2)],
 			uniform1i = [("tex",0)],
-			position = INPUT_POS, #position from bottom left in drawing window
+			position = INSTRUCTION_POS, #position from bottom left in drawing window
 			size = INPUT_SIZE #(width,height in drawing window)
 		)
-		#DRAW INSTRUCTIONS IMAGE ON SCREEN
-		self.doShader(self.input_program, [instruction_image],
-			uniform2f = [("offset",-1,-1),("scale",2,2)],
-			uniform1i = [("tex",0)],
-			position = INSTRUCTION_POS, #position from bottom left in drawing window
-			size = INSTRUCTION_SIZE #(width,height in drawing window)
-		)
+		# #DRAW INSTRUCTIONS IMAGE ON SCREEN
+		# self.doShader(self.input_program, [instruction_image],
+			# uniform2f = [("offset",-1,-1),("scale",2,2)],
+			# uniform1i = [("tex",0)],
+			# position = INSTRUCTION_POS, #position from bottom left in drawing window
+			# size = INSTRUCTION_SIZE #(width,height in drawing window)
+		# )
 		
 		
 		##store and print and show coordinates found
